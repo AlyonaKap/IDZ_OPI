@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Net;
 using System.Xml;
 using HtmlAgilityPack;
+using System;
 
 
 namespace IDZ_OPI
@@ -26,6 +27,10 @@ namespace IDZ_OPI
     {
         ILoader CreateLoader();
         ISaver CreateSaver();
+    }
+    public interface IObserver
+    {
+        void Update(string message);
     }
 
     class TxtLoader : ILoader
@@ -116,12 +121,46 @@ namespace IDZ_OPI
 
     public partial class Form1 : Form
     {
+        private List<IObserver> observers = new List<IObserver>();
+        private string previousText = "";
+        private string currentFilePath = "";
         public Form1()
         {
             InitializeComponent();
-            saveFileDialog.FileOk -= saveFileDialog_FileOk;
-            saveFileDialog.FileOk += saveFileDialog_FileOk;
+
+            Attach(new MessageObserver());
+
+            source.TextChanged += Source_TextChanged;
+            this.FormClosing += Form1_Close;
         }
+
+        public void Attach(IObserver obs) => observers.Add(obs);
+        public void Detach(IObserver obs) => observers.Remove(obs);
+        private void Notify(string message)
+        {
+            foreach (var obs in observers)
+                obs.Update(message);
+        }
+
+        private void Source_TextChanged(object sender, EventArgs e)
+        {
+            string text = source.Text;
+
+            if (!string.IsNullOrEmpty(currentFilePath) && text.Contains("\r\n\r\n") && !previousText.Contains("\r\n\r\n"))
+            {
+                File.WriteAllText(currentFilePath, text, Encoding.UTF8);
+            }
+
+            var regex = new Regex(@"\b[\w\.-]+?\.(edu|net|com|in|org)\.ua\b", RegexOptions.IgnoreCase);
+            foreach (Match m in regex.Matches(text))
+            {
+                if (!previousText.Contains(m.Value))
+                    Notify("[Спостерігач] Було знайдено новий інтернет адрес: " + m.Value);
+            }
+
+            previousText = text;
+        }
+
 
         private void openFile_Click(object sender, EventArgs e)
         {
@@ -130,12 +169,12 @@ namespace IDZ_OPI
 
         private void openFileDialog_FileOk(object sender, CancelEventArgs e)
         {
-            string fullPathname = openFileDialog.FileName;
-            FileInfo src = new FileInfo(fullPathname);
+            currentFilePath = openFileDialog.FileName;
+            FileInfo src = new FileInfo(currentFilePath);
             filename.Text = src.Name;
 
             IFactory factory;
-            string extension = Path.GetExtension(fullPathname).ToLower();
+            string extension = Path.GetExtension(currentFilePath).ToLower();
 
             switch (extension)
             {
@@ -151,7 +190,8 @@ namespace IDZ_OPI
             }
 
             ILoader loader = factory.CreateLoader();
-            source.Text = loader.Load(fullPathname);
+            source.Text = loader.Load(currentFilePath);
+            previousText = source.Text;
         }
 
         private void getStatistics_Click(object sender, EventArgs e)
@@ -203,7 +243,7 @@ namespace IDZ_OPI
             int paragraphCount = text.Split(new[] { "\r\n\r\n", "\n\n" }, StringSplitOptions.RemoveEmptyEntries).Length;
 
             string fullPathname = openFileDialog.FileName;
-            FileInfo src = new FileInfo(fullPathname);
+            FileInfo src = new FileInfo(currentFilePath);
             double fileSize = src.Length / 1024.0;
 
             StringBuilder result = new StringBuilder();
@@ -247,9 +287,9 @@ namespace IDZ_OPI
 
         private void saveFileDialog_FileOk(object sender, CancelEventArgs e)
         {
-            string fullPathname = saveFileDialog.FileName;
+            currentFilePath = saveFileDialog.FileName;
             IFactory factory;
-            string extension = Path.GetExtension(fullPathname).ToLower();
+            string extension = Path.GetExtension(currentFilePath).ToLower();
 
             switch (extension)
             {
@@ -265,9 +305,25 @@ namespace IDZ_OPI
             }
 
             ISaver saver = factory.CreateSaver();
-            saver.Save(fullPathname, source.Text);
+            saver.Save(currentFilePath, source.Text);
+            Notify("[Спостерігач] Дані у файлі оновлено");
         }
 
+        private void Form1_Close(object sender, FormClosingEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                File.WriteAllText(currentFilePath, source.Text, Encoding.UTF8);
+                Notify("[Спостерігач] Дані у файлі оновлено");
+            }
+        }
+        class MessageObserver : IObserver
+        {
+            public void Update(string message)
+            {
+                MessageBox.Show(message, "Сповіщення", MessageBoxButtons.OK);
+            }
+        }
         private void cutMenu_Click(object sender, EventArgs e)
         {
             source.Cut();
