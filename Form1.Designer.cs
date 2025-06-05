@@ -102,10 +102,11 @@
             source.Margin = new Padding(3, 4, 3, 4);
             source.Multiline = true;
             source.Name = "source";
+            source.Multiline = true;
             source.ScrollBars = ScrollBars.Vertical;
             source.Size = new Size(631, 483);
             source.TabIndex = 5;
-            source.WordWrap = false;
+            source.WordWrap = true;
             // 
             // label2
             // 

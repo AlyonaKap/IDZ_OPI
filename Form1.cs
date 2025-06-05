@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -10,10 +9,67 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Text.RegularExpressions;
 using System.Net;
+using System.Xml;
+using HtmlAgilityPack;
 
 
 namespace IDZ_OPI
 {
+    interface ILoader { 
+        string Load(string path); 
+    }
+    interface IFactory
+    {
+        ILoader CreateLoader();
+    }
+
+    class TxtLoader : ILoader
+    {
+        public string Load(string path) => File.ReadAllText(path, Encoding.UTF8);
+    }
+    class HtmlLoader : ILoader
+    {
+        public string Load(string path)
+        {
+            var document = new HtmlAgilityPack.HtmlDocument();
+            document.Load(path, Encoding.UTF8);
+            var sb = new StringBuilder();
+
+            foreach (var p in document.DocumentNode.SelectNodes("//p|//br") ?? Enumerable.Empty<HtmlNode>())
+            {
+                string text = HtmlEntity.DeEntitize(p.InnerText).Trim();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    sb.AppendLine(text);
+                    sb.AppendLine();
+                }
+            }
+
+            return sb.ToString();
+        }
+    }
+    class BinLoader : ILoader
+    {
+        public string Load(string path)
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            return Encoding.UTF8.GetString(bytes);
+        }
+    }
+
+    class TxtFactory : IFactory
+    {
+        public ILoader CreateLoader() => new TxtLoader();
+    }
+    class HtmlFactory : IFactory
+    {
+        public ILoader CreateLoader() => new HtmlLoader();
+    }
+    class BinFactory : IFactory
+    {
+        public ILoader CreateLoader() => new BinLoader();
+    }
+
     public partial class Form1 : Form
     {
         public Form1()
@@ -31,20 +87,25 @@ namespace IDZ_OPI
             string fullPathname = openFileDialog.FileName;
             FileInfo src = new FileInfo(fullPathname);
             filename.Text = src.Name;
-            source.Text = "";
 
-            using (TextReader reader = new StreamReader(fullPathname, Encoding.UTF8))
+            IFactory factory;
+            string extension = Path.GetExtension(fullPathname).ToLower();
+
+            switch (extension)
             {
-                var sb = new StringBuilder();
-
-                while (reader.Peek() != -1)
-                {
-                    sb.AppendLine(reader.ReadLine());
-                }
-
-                source.Text = sb.ToString();
-
+                case ".html":
+                    factory = new HtmlFactory();
+                    break;
+                case ".bin":
+                    factory = new BinFactory();
+                    break;
+                default:
+                    factory = new TxtFactory();
+                    break;
             }
+
+            ILoader loader = factory.CreateLoader();
+            source.Text = loader.Load(fullPathname);
         }
 
         private void getStatistics_Click(object sender, EventArgs e)
