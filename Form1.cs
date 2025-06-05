@@ -18,9 +18,14 @@ namespace IDZ_OPI
     interface ILoader { 
         string Load(string path); 
     }
+
+    interface ISaver {
+        void Save(string path, string text);
+    }
     interface IFactory
     {
         ILoader CreateLoader();
+        ISaver CreateSaver();
     }
 
     class TxtLoader : ILoader
@@ -57,17 +62,56 @@ namespace IDZ_OPI
         }
     }
 
+    class TxtSaver : ISaver
+    {
+        public void Save(string path, string text) => File.WriteAllText(path, text, Encoding.UTF8);
+    }
+    class HtmlSaver : ISaver
+    {
+        public void Save(string path, string text)
+        {
+            var paragraphs = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            var sb = new StringBuilder();
+            sb.AppendLine("<!DOCTYPE html>");
+            sb.AppendLine("<html lang=\"ru\">");
+            sb.AppendLine("  <head>");
+            sb.AppendLine("    <meta charset=\"UTF-8\">");
+            sb.AppendLine("    <title>HTML Document</title>");
+            sb.AppendLine("  </head>");
+            sb.AppendLine("  <body>");
+
+            foreach (var p in paragraphs)
+                sb.AppendLine($"    <p>{WebUtility.HtmlEncode(p)}</p>");
+
+            sb.AppendLine("  </body>");
+            sb.AppendLine("</html>");
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+
+        }
+    }
+    class BinSaver : ISaver
+    {
+        public void Save(string path, string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            File.WriteAllBytes(path, bytes);
+        }
+    }
+
     class TxtFactory : IFactory
     {
         public ILoader CreateLoader() => new TxtLoader();
+        public ISaver CreateSaver() => new TxtSaver();
     }
     class HtmlFactory : IFactory
     {
         public ILoader CreateLoader() => new HtmlLoader();
+        public ISaver CreateSaver() => new HtmlSaver();
     }
     class BinFactory : IFactory
     {
         public ILoader CreateLoader() => new BinLoader();
+        public ISaver CreateSaver() => new BinSaver();
     }
 
     public partial class Form1 : Form
@@ -75,6 +119,8 @@ namespace IDZ_OPI
         public Form1()
         {
             InitializeComponent();
+            saveFileDialog.FileOk -= saveFileDialog_FileOk;
+            saveFileDialog.FileOk += saveFileDialog_FileOk;
         }
 
         private void openFile_Click(object sender, EventArgs e)
@@ -195,23 +241,31 @@ namespace IDZ_OPI
                 return;
             }
 
-            saveFileDialog.Filter = "Текстові файли (*.txt)|*.txt|Усі файли (*.*)|*.*";
-            saveFileDialog.Title = "Зберегти новини";
-            saveFileDialog.FileOk += saveFileDialog_FileOk;
+            saveFileDialog.Filter = "Txt (.txt)|*.txt|Html (.html)|*.html|Bin (.bin)|*.bin";
             saveFileDialog.ShowDialog();
         }
 
         private void saveFileDialog_FileOk(object sender, CancelEventArgs e)
         {
             string fullPathname = saveFileDialog.FileName;
-            try
+            IFactory factory;
+            string extension = Path.GetExtension(fullPathname).ToLower();
+
+            switch (extension)
             {
-                File.WriteAllText(fullPathname, source.Text, Encoding.UTF8);
+                case ".html":
+                    factory = new HtmlFactory();
+                    break;
+                case ".bin":
+                    factory = new BinFactory();
+                    break;
+                default:
+                    factory = new TxtFactory();
+                    break;
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Помилка при збереженні: " + ex.Message);
-            }
+
+            ISaver saver = factory.CreateSaver();
+            saver.Save(fullPathname, source.Text);
         }
 
         private void cutMenu_Click(object sender, EventArgs e)
